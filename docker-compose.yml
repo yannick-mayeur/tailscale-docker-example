@@ -1,0 +1,46 @@
+version: "2.4"
+services:
+  tailscale:
+    container_name: tailscale
+    hostname: tailscale
+    image: tailscale/tailscale:stable
+    volumes:
+      - ./tailscale:/var/lib # State data will be stored in this directory
+      - /dev/net/tun:/dev/net/tun # Required for tailscale to work
+      - tailscale_runner:/var/run/tailscale # used to share tailscaled.sock with traekfik container
+    cap_add: # Required for tailscale to work
+      - net_admin
+      - sys_module
+    command: tailscaled
+    restart: unless-stopped
+
+  traefik:
+    image: "traefik:v3.0"
+    container_name: "whoami_traefik"
+    command:
+      # - "--log.level=DEBUG"
+      # - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.tailscale=true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - tailscale_runner:/var/run/tailscale
+    network_mode: service:tailscale
+    restart: unless-stopped
+
+  whoami:
+    image: "traefik/whoami"
+    container_name: "whoami_server"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami_https.rule=Host(`whoami.zebra-kelvin.ts.net`)"
+      - "traefik.http.routers.whoami_https.entrypoints=websecure"
+      - "traefik.http.routers.whoami_https.tls.certresolver=myresolver"
+
+volumes:
+  tailscale_runner:
